@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import settings
+from app.routers import drone
 
 app = FastAPI(
     title=settings.app_name,
@@ -15,5 +16,4 @@ def health_check() -> dict:
     return {"status": "ok"}
 
 
-# Router'lar geliştikçe burada dahil edilecek.
-# Örn: app.include_router(drone.router)
+app.include_router(drone.router)
