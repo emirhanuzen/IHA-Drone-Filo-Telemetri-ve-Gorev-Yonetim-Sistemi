@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Sanal ortamlar
+.venv/
+venv/
+env/
+
+# Ortam değişkenleri
+.env
+
+# Test / araç önbellekleri
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db
