@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import settings
-from app.routers import drone
+from app.routers import drone, mission
 
 app = FastAPI(
     title=settings.app_name,
@@ -17,3 +17,4 @@ def health_check() -> dict:
 
 
 app.include_router(drone.router)
+app.include_router(mission.router)
