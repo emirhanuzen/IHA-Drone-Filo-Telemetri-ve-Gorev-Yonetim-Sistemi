@@ -6,5 +6,6 @@ Tüm modeller burada içe aktarılır; böylece Alembic ve SQLAlchemy ilişki
 
 from app.models.drone import Drone
 from app.models.mission import Mission
+from app.models.telemetry import TelemetryLog
 
-__all__ = ["Drone", "Mission"]
+__all__ = ["Drone", "Mission", "TelemetryLog"]

@@ -32,3 +32,6 @@ class Drone(Base):
     missions: Mapped[list["Mission"]] = relationship(  # noqa: F821
         back_populates="drone", cascade="all, delete-orphan"
     )
+    telemetry_logs: Mapped[list["TelemetryLog"]] = relationship(  # noqa: F821
+        back_populates="drone", cascade="all, delete-orphan"
+    )
