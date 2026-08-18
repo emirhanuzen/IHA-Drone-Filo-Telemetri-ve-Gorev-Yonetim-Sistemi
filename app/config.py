@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
     celery_result_backend: str = "rpc://"
     celery_task_queue: str = "telemetry"
+    events_exchange: str = "iha.events"
 
     # Toplu telemetri işleme
     upload_dir: str = "/app/uploads"
