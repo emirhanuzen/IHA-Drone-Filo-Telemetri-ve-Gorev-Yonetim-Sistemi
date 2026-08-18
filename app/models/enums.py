@@ -26,6 +26,15 @@ class AlertType(str, enum.Enum):
     SINYAL_KAYBI = "sinyal_kaybi"
 
 
+class AlertSeverity(str, enum.Enum):
+    """Uyarının önem derecesi."""
+
+    DUSUK = "dusuk"
+    ORTA = "orta"
+    YUKSEK = "yuksek"
+    KRITIK = "kritik"
+
+
 class UserRole(str, enum.Enum):
     """Kullanıcı rolleri."""
 

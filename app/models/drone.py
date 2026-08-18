@@ -35,3 +35,6 @@ class Drone(Base):
     telemetry_logs: Mapped[list["TelemetryLog"]] = relationship(  # noqa: F821
         back_populates="drone", cascade="all, delete-orphan"
     )
+    alerts: Mapped[list["SensorAlert"]] = relationship(  # noqa: F821
+        back_populates="drone", cascade="all, delete-orphan"
+    )
