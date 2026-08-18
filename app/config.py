@@ -11,9 +11,14 @@ class Settings(BaseSettings):
     # Veritabanı
     database_url: str = "postgresql+psycopg2://iha:iha@localhost:5432/iha_filo"
 
-    # Mesaj kuyruğu (Celery + RabbitMQ) — sonraki fazlarda kullanılacak
+    # Mesaj kuyruğu (Celery + RabbitMQ)
     celery_broker_url: str = "amqp://guest:guest@localhost:5672//"
     celery_result_backend: str = "rpc://"
+    celery_task_queue: str = "telemetry"
+
+    # Toplu telemetri işleme
+    upload_dir: str = "/app/uploads"
+    csv_chunk_size: int = 5000
 
     # Güvenlik — JWT (sonraki fazlarda kullanılacak)
     secret_key: str = "degistir-beni-cok-gizli-anahtar"

@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -21,5 +22,21 @@ def get_db() -> Generator:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope() -> Generator:
+    """FastAPI dışında (Celery worker'ında) kullanılan oturum yöneticisi.
+
+    Hata durumunda rollback yapar, her hâlükârda oturumu kapatır.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
