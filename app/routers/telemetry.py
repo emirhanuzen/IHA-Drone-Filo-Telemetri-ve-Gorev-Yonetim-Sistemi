@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, File, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db, require_telemetry_sender
 from app.schemas.telemetry import (
     BulkTelemetryAccepted,
     CsvUploadAccepted,
@@ -9,9 +9,14 @@ from app.schemas.telemetry import (
     TelemetryLogCreate,
     TelemetryLogResponse,
 )
+from app.schemas.user import CurrentUser
 from app.services import telemetry as telemetry_service
 
-router = APIRouter(prefix="/telemetry", tags=["telemetry"])
+# Telemetri gönderimi operator'ün (ve admin'in) yetkisindedir; okuma tüm
+# rollere açıktır.
+router = APIRouter(
+    prefix="/telemetry", tags=["telemetry"], dependencies=[Depends(get_current_user)]
+)
 
 
 @router.post(
@@ -20,6 +25,7 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 def create_telemetry_bulk(
     payload: list[TelemetryLogCreate] = Body(..., min_length=1),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_telemetry_sender),
 ) -> BulkTelemetryAccepted:
     """Telemetri kayıtlarını toplu olarak (JSON dizisi) alır.
 
@@ -35,7 +41,10 @@ def create_telemetry_bulk(
     response_model=CsvUploadAccepted,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def upload_telemetry_csv(file: UploadFile = File(...)) -> CsvUploadAccepted:
+def upload_telemetry_csv(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(require_telemetry_sender),
+) -> CsvUploadAccepted:
     """Büyük bir telemetri CSV dosyasını yükler.
 
     Dosya ortak dizine alınır ve worker'a devredilir; worker dosyayı pandas
@@ -48,7 +57,9 @@ def upload_telemetry_csv(file: UploadFile = File(...)) -> CsvUploadAccepted:
 
 @router.post("", response_model=TelemetryLogResponse, status_code=status.HTTP_201_CREATED)
 def create_telemetry(
-    payload: TelemetryLogCreate, db: Session = Depends(get_db)
+    payload: TelemetryLogCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_telemetry_sender),
 ) -> TelemetryLogResponse:
     return telemetry_service.create_telemetry(db, payload)
 

@@ -1,17 +1,24 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db, require_telemetry_sender
 from app.models.enums import AlertType
 from app.schemas.alert import SensorAlertCreate, SensorAlertResponse
+from app.schemas.user import CurrentUser
 from app.services import alert as alert_service
 
-router = APIRouter(prefix="/alerts", tags=["alerts"])
+# Uyarılar çoğunlukla worker tarafından otomatik üretilir; elle uyarı açmak
+# saha operatörünün (ve admin'in) işidir, okuma tüm rollere açıktır.
+router = APIRouter(
+    prefix="/alerts", tags=["alerts"], dependencies=[Depends(get_current_user)]
+)
 
 
 @router.post("", response_model=SensorAlertResponse, status_code=status.HTTP_201_CREATED)
 def create_alert(
-    payload: SensorAlertCreate, db: Session = Depends(get_db)
+    payload: SensorAlertCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_telemetry_sender),
 ) -> SensorAlertResponse:
     """Elle uyarı kaydı açar (ör. sinyal kaybı bildirimi)."""
     return alert_service.create_alert(db, payload)
