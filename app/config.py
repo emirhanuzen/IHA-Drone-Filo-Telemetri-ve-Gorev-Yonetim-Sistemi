@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     upload_dir: str = "/app/uploads"
     csv_chunk_size: int = 5000
 
-    # Güvenlik — JWT (sonraki fazlarda kullanılacak)
+    # Güvenlik — JWT
     secret_key: str = "degistir-beni-cok-gizli-anahtar"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
