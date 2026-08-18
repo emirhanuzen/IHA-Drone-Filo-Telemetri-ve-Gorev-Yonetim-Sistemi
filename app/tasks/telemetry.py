@@ -5,6 +5,7 @@ Task'lar yalnızca oturum açıp servis katmanını çağırır; iş mantığı
 """
 
 import logging
+from pathlib import Path
 
 from app.celery_app import celery_app
 from app.db.database import session_scope
@@ -21,6 +22,27 @@ def process_telemetry_batch(records: list[dict]) -> dict:
 
     logger.info(
         "Telemetri paketi islendi: %s yazildi, %s atlandi",
+        summary["inserted"],
+        summary["skipped"],
+    )
+    return summary
+
+
+@celery_app.task(name="telemetry.process_csv")
+def process_telemetry_csv(file_path: str) -> dict:
+    """Yüklenen CSV dosyasını parça parça okuyup veritabanına yazar.
+
+    İş bittiğinde geçici dosya silinir; hata hâlinde de dosya bırakılmaz.
+    """
+    try:
+        with session_scope() as db:
+            summary = telemetry_service.import_telemetry_csv(db, file_path)
+    finally:
+        Path(file_path).unlink(missing_ok=True)
+
+    logger.info(
+        "CSV islendi (%s parca): %s yazildi, %s atlandi",
+        summary["chunks"],
         summary["inserted"],
         summary["skipped"],
     )

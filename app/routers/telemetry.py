@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Body, Depends, status
+from fastapi import APIRouter, Body, Depends, File, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.schemas.telemetry import (
     BulkTelemetryAccepted,
+    CsvUploadAccepted,
     TaskStatusResponse,
     TelemetryLogCreate,
     TelemetryLogResponse,
@@ -27,6 +28,22 @@ def create_telemetry_bulk(
     """
     task_id = telemetry_service.queue_telemetry_bulk(db, payload)
     return BulkTelemetryAccepted(received=len(payload), task_id=task_id)
+
+
+@router.post(
+    "/upload-csv",
+    response_model=CsvUploadAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def upload_telemetry_csv(file: UploadFile = File(...)) -> CsvUploadAccepted:
+    """Büyük bir telemetri CSV dosyasını yükler.
+
+    Dosya ortak dizine alınır ve worker'a devredilir; worker dosyayı pandas
+    ile parça parça okuyup yazar.
+    """
+    file_path = telemetry_service.store_upload_file(file)
+    task_id = telemetry_service.queue_telemetry_csv(file_path)
+    return CsvUploadAccepted(filename=file.filename or "telemetry.csv", task_id=task_id)
 
 
 @router.post("", response_model=TelemetryLogResponse, status_code=status.HTTP_201_CREATED)

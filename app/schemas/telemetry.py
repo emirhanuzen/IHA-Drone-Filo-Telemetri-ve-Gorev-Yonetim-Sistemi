@@ -45,6 +45,14 @@ class BulkTelemetryAccepted(BaseModel):
     status: str = Field("kuyruga_alindi", description="İsteğin anlık durumu")
 
 
+class CsvUploadAccepted(BaseModel):
+    """CSV yüklemesinin kuyruğa alındığını bildirir."""
+
+    filename: str = Field(..., description="Yüklenen dosyanın adı")
+    task_id: str = Field(..., description="Celery görev kimliği")
+    status: str = Field("kuyruga_alindi", description="İsteğin anlık durumu")
+
+
 class TaskStatusResponse(BaseModel):
     """Kuyruğa bırakılmış bir telemetri görevinin durumu."""
 

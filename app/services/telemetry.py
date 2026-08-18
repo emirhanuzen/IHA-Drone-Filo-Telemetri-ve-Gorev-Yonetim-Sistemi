@@ -8,13 +8,19 @@ görevi RabbitMQ kuyruğuna bırakır, veritabanına yazma işini Celery worker
   * Worker tarafı -> asıl veritabanı yazımını yapar (save_*/import_* fonksiyonları)
 """
 
+import shutil
+import uuid
+from pathlib import Path
+
+import pandas as pd
 from celery.result import AsyncResult
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
+from app.config import settings
 from app.models.drone import Drone
 from app.models.telemetry import TelemetryLog
 from app.schemas.telemetry import TelemetryLogCreate
@@ -22,6 +28,16 @@ from app.schemas.telemetry import TelemetryLogCreate
 # Task adları; import döngüsü olmasın diye task'lar adlarıyla çağrılır.
 TASK_PROCESS_BATCH = "telemetry.process_batch"
 TASK_PROCESS_CSV = "telemetry.process_csv"
+
+# CSV dosyasında bulunması zorunlu sütunlar.
+CSV_REQUIRED_COLUMNS = {
+    "drone_id",
+    "latitude",
+    "longitude",
+    "altitude",
+    "fuel_percentage",
+    "speed",
+}
 
 
 def get_telemetry(db: Session, telemetry_id: int) -> TelemetryLog:
@@ -96,6 +112,29 @@ def queue_telemetry_bulk(db: Session, items: list[TelemetryLogCreate]) -> str:
     return result.id
 
 
+def store_upload_file(upload: UploadFile) -> str:
+    """Yüklenen CSV'yi paylaşılan dizine kopyalar; dosya yolunu döner.
+
+    Dosya belleğe tamamen alınmaz; worker'ın da erişebildiği ortak dizine
+    parça parça yazılır.
+    """
+    filename = upload.filename or "telemetry.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Yalnizca .csv uzantili dosyalar kabul edilir",
+        )
+
+    upload_dir = Path(settings.upload_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = upload_dir / f"{uuid.uuid4().hex}.csv"
+
+    with target.open("wb") as buffer:
+        shutil.copyfileobj(upload.file, buffer)
+
+    return str(target)
+
+
 def queue_telemetry_csv(file_path: str) -> str:
     """CSV dosyasının işlenmesini worker'a devreder; task id döner."""
     result = celery_app.send_task(TASK_PROCESS_CSV, args=[file_path])
@@ -117,11 +156,13 @@ def get_task_state(task_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def save_telemetry_batch(db: Session, records: list[dict]) -> dict:
-    """Worker tarafından çağrılır: telemetri kayıtlarını veritabanına yazar.
+def _persist_records(
+    db: Session, records: list[dict], known_ids: set[int] | None = None
+) -> dict:
+    """Ham kayıtları doğrulayıp veritabanına yazar; özet döner.
 
-    Worker bir HTTP isteği içinde çalışmadığı için hatalı kayıtlarda istisna
-    fırlatmak yerine o kayıtları atlar ve özet döner.
+    Geçersiz kayıtlar ve var olmayan bir drone'a ait kayıtlar atlanır —
+    tek bir bozuk satır yüzünden tüm paket düşmez.
     """
     if not records:
         return {"received": 0, "inserted": 0, "skipped": 0}
@@ -134,7 +175,9 @@ def save_telemetry_batch(db: Session, records: list[dict]) -> dict:
         except ValidationError:
             skipped += 1
 
-    known_ids = _existing_drone_ids(db, {item.drone_id for item in valid})
+    if known_ids is None:
+        known_ids = _existing_drone_ids(db, {item.drone_id for item in valid})
+
     logs = []
     for item in valid:
         if item.drone_id not in known_ids:
@@ -147,3 +190,49 @@ def save_telemetry_batch(db: Session, records: list[dict]) -> dict:
         db.commit()
 
     return {"received": len(records), "inserted": len(logs), "skipped": skipped}
+
+
+def save_telemetry_batch(db: Session, records: list[dict]) -> dict:
+    """Worker tarafından çağrılır: telemetri paketini veritabanına yazar."""
+    return _persist_records(db, records)
+
+
+def _chunk_to_records(chunk: pd.DataFrame) -> list[dict]:
+    """Bir pandas parçasını, şemaya verilebilecek sözlük listesine çevirir."""
+    missing = CSV_REQUIRED_COLUMNS - set(chunk.columns)
+    if missing:
+        raise ValueError(f"CSV dosyasinda eksik sutunlar var: {sorted(missing)}")
+
+    # timestamp isteğe bağlı: dosyada varsa alınır, yoksa sunucu zamanı kullanılır.
+    columns = sorted(CSV_REQUIRED_COLUMNS)
+    if "timestamp" in chunk.columns:
+        columns.append("timestamp")
+
+    frame = chunk[columns]
+    # Boş hücreler (NaN) None'a çevrilir; şema bunları "verilmemiş" sayar.
+    frame = frame.astype(object).where(pd.notna(frame), None)
+    return frame.to_dict(orient="records")
+
+
+def import_telemetry_csv(db: Session, file_path: str) -> dict:
+    """Büyük bir telemetri CSV'sini pandas ile PARÇA PARÇA okuyup yazar.
+
+    Dosya tek seferde belleğe alınmaz; `csv_chunk_size` kadarlık parçalar
+    hâlinde okunur ve her parça ayrı bir toplu yazma olarak işlenir.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"CSV dosyasi bulunamadi: {file_path}")
+
+    # Drone kimlikleri dosya boyunca sabit; tek sorguyla okunup yeniden kullanılır.
+    known_ids = set(db.scalars(select(Drone.id)).all())
+
+    totals = {"received": 0, "inserted": 0, "skipped": 0, "chunks": 0}
+    for chunk in pd.read_csv(path, chunksize=settings.csv_chunk_size):
+        summary = _persist_records(db, _chunk_to_records(chunk), known_ids)
+        totals["received"] += summary["received"]
+        totals["inserted"] += summary["inserted"]
+        totals["skipped"] += summary["skipped"]
+        totals["chunks"] += 1
+
+    return totals
