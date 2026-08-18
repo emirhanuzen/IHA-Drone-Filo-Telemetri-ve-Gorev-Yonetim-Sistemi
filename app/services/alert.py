@@ -17,7 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.events import publish_event
+from app.events import publish_events
 from app.models.alert import SensorAlert
 from app.models.enums import AlertSeverity, AlertType
 from app.models.telemetry import TelemetryLog
@@ -90,8 +90,7 @@ def build_event_payload(alert: SensorAlert) -> dict:
 
 def publish_alert_created(payloads: list[dict]) -> None:
     """Hazırlanmış uyarı event'lerini "alert.created" ile yayınlar."""
-    for payload in payloads:
-        publish_event(ALERT_CREATED_EVENT, payload)
+    publish_events(ALERT_CREATED_EVENT, payloads)
 
 
 def create_alert(db: Session, data: SensorAlertCreate) -> SensorAlert:

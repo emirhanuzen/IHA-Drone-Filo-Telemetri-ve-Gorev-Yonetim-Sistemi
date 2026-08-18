@@ -27,6 +27,7 @@ celery_app.conf.update(
     # Worker bir görevi ancak bitirdikten sonra onaylasın; çökme hâlinde
     # telemetri paketi kaybolmasın.
     task_acks_late=True,
+    broker_connection_retry_on_startup=True,
     worker_prefetch_multiplier=1,
     result_expires=3600,
 )
