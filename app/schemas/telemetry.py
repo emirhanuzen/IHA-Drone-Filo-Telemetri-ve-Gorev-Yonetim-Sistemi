@@ -33,8 +33,21 @@ class TelemetryLogResponse(BaseModel):
     created_at: datetime
 
 
-class BulkTelemetryResult(BaseModel):
-    """Toplu telemetri yüklemesinin özeti."""
+class BulkTelemetryAccepted(BaseModel):
+    """Toplu telemetri isteğinin kuyruğa alındığını bildirir.
 
-    received: int = Field(..., description="Gelen kayıt sayısı")
-    inserted: int = Field(..., description="Veritabanına yazılan kayıt sayısı")
+    Kayıtlar bu yanıt dönerken henüz yazılmamıştır; yazma işini Celery worker
+    üstlenir. İşin durumu `task_id` ile sorgulanabilir.
+    """
+
+    received: int = Field(..., description="Kuyruğa alınan kayıt sayısı")
+    task_id: str = Field(..., description="Celery görev kimliği")
+    status: str = Field("kuyruga_alindi", description="İsteğin anlık durumu")
+
+
+class TaskStatusResponse(BaseModel):
+    """Kuyruğa bırakılmış bir telemetri görevinin durumu."""
+
+    task_id: str
+    state: str = Field(..., description="PENDING / STARTED / SUCCESS / FAILURE")
+    result: dict | None = Field(None, description="Görev tamamlandıysa özeti")

@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.schemas.telemetry import (
-    BulkTelemetryResult,
+    BulkTelemetryAccepted,
+    TaskStatusResponse,
     TelemetryLogCreate,
     TelemetryLogResponse,
 )
@@ -13,18 +14,19 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 
 @router.post(
-    "/bulk", response_model=BulkTelemetryResult, status_code=status.HTTP_201_CREATED
+    "/bulk", response_model=BulkTelemetryAccepted, status_code=status.HTTP_202_ACCEPTED
 )
 def create_telemetry_bulk(
     payload: list[TelemetryLogCreate] = Body(..., min_length=1),
     db: Session = Depends(get_db),
-) -> BulkTelemetryResult:
+) -> BulkTelemetryAccepted:
     """Telemetri kayıtlarını toplu olarak (JSON dizisi) alır.
 
-    Şimdilik senkron işlenir; 5. fazda Celery worker'a devredilecek.
+    Kayıtlar senkron yazılmaz; istek doğrulanıp Celery worker'a devredilir ve
+    202 Accepted ile birlikte takip için bir task id döner.
     """
-    inserted = telemetry_service.create_telemetry_bulk(db, payload)
-    return BulkTelemetryResult(received=len(payload), inserted=inserted)
+    task_id = telemetry_service.queue_telemetry_bulk(db, payload)
+    return BulkTelemetryAccepted(received=len(payload), task_id=task_id)
 
 
 @router.post("", response_model=TelemetryLogResponse, status_code=status.HTTP_201_CREATED)
@@ -42,6 +44,12 @@ def list_telemetry(
     db: Session = Depends(get_db),
 ) -> list[TelemetryLogResponse]:
     return telemetry_service.list_telemetry(db, drone_id=drone_id, skip=skip, limit=limit)
+
+
+@router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
+def get_task_status(task_id: str) -> TaskStatusResponse:
+    """Kuyruğa bırakılan toplu yükleme görevinin durumunu sorgular."""
+    return TaskStatusResponse(**telemetry_service.get_task_state(task_id))
 
 
 @router.get("/{telemetry_id}", response_model=TelemetryLogResponse)
