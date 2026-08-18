@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db, require_admin
 from app.schemas.drone import DroneCreate, DroneResponse, DroneUpdate
-from app.schemas.user import CurrentUser
 from app.services import drone as drone_service
 
 # Router seviyesindeki bağımlılık: tüm drone uç noktaları JWT ister.
@@ -14,12 +13,13 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=DroneResponse, status_code=status.HTTP_201_CREATED)
-def create_drone(
-    payload: DroneCreate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
-) -> DroneResponse:
+@router.post(
+    "",
+    response_model=DroneResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+def create_drone(payload: DroneCreate, db: Session = Depends(get_db)) -> DroneResponse:
     return drone_service.create_drone(db, payload)
 
 
@@ -35,20 +35,21 @@ def get_drone(drone_id: int, db: Session = Depends(get_db)) -> DroneResponse:
     return drone_service.get_drone(db, drone_id)
 
 
-@router.patch("/{drone_id}", response_model=DroneResponse)
+@router.patch(
+    "/{drone_id}",
+    response_model=DroneResponse,
+    dependencies=[Depends(require_admin)],
+)
 def update_drone(
-    drone_id: int,
-    payload: DroneUpdate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    drone_id: int, payload: DroneUpdate, db: Session = Depends(get_db)
 ) -> DroneResponse:
     return drone_service.update_drone(db, drone_id, payload)
 
 
-@router.delete("/{drone_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_drone(
-    drone_id: int,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
-) -> None:
+@router.delete(
+    "/{drone_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
+def delete_drone(drone_id: int, db: Session = Depends(get_db)) -> None:
     drone_service.delete_drone(db, drone_id)

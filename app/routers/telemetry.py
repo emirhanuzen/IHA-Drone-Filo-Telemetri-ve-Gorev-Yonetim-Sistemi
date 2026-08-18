@@ -9,7 +9,6 @@ from app.schemas.telemetry import (
     TelemetryLogCreate,
     TelemetryLogResponse,
 )
-from app.schemas.user import CurrentUser
 from app.services import telemetry as telemetry_service
 
 # Telemetri gönderimi operator'ün (ve admin'in) yetkisindedir; okuma tüm
@@ -20,12 +19,14 @@ router = APIRouter(
 
 
 @router.post(
-    "/bulk", response_model=BulkTelemetryAccepted, status_code=status.HTTP_202_ACCEPTED
+    "/bulk",
+    response_model=BulkTelemetryAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_telemetry_sender)],
 )
 def create_telemetry_bulk(
     payload: list[TelemetryLogCreate] = Body(..., min_length=1),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_telemetry_sender),
 ) -> BulkTelemetryAccepted:
     """Telemetri kayıtlarını toplu olarak (JSON dizisi) alır.
 
@@ -40,11 +41,9 @@ def create_telemetry_bulk(
     "/upload-csv",
     response_model=CsvUploadAccepted,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_telemetry_sender)],
 )
-def upload_telemetry_csv(
-    file: UploadFile = File(...),
-    current_user: CurrentUser = Depends(require_telemetry_sender),
-) -> CsvUploadAccepted:
+def upload_telemetry_csv(file: UploadFile = File(...)) -> CsvUploadAccepted:
     """Büyük bir telemetri CSV dosyasını yükler.
 
     Dosya ortak dizine alınır ve worker'a devredilir; worker dosyayı pandas
@@ -55,11 +54,14 @@ def upload_telemetry_csv(
     return CsvUploadAccepted(filename=file.filename or "telemetry.csv", task_id=task_id)
 
 
-@router.post("", response_model=TelemetryLogResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=TelemetryLogResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_telemetry_sender)],
+)
 def create_telemetry(
-    payload: TelemetryLogCreate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_telemetry_sender),
+    payload: TelemetryLogCreate, db: Session = Depends(get_db)
 ) -> TelemetryLogResponse:
     return telemetry_service.create_telemetry(db, payload)
 

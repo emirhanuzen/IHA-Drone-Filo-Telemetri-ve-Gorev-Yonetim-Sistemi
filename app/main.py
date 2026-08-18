@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import settings
-from app.routers import alert, auth, drone, mission, telemetry
+from app.routers import alert, auth, drone, mission, telemetry, user
 
 app = FastAPI(
     title=settings.app_name,
@@ -17,6 +17,7 @@ def health_check() -> dict:
 
 
 app.include_router(auth.router)
+app.include_router(user.router)
 app.include_router(drone.router)
 app.include_router(mission.router)
 app.include_router(telemetry.router)

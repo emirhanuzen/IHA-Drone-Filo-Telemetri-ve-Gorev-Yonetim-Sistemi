@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db, require_mission_manager
 from app.schemas.mission import MissionCreate, MissionResponse, MissionUpdate
-from app.schemas.user import CurrentUser
 from app.services import mission as mission_service
 
 # Görev atama/güncelleme/iptal commander'ın (ve admin'in) yetkisindedir;
@@ -13,11 +12,14 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=MissionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=MissionResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_mission_manager)],
+)
 def create_mission(
-    payload: MissionCreate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_mission_manager),
+    payload: MissionCreate, db: Session = Depends(get_db)
 ) -> MissionResponse:
     return mission_service.create_mission(db, payload)
 
@@ -37,20 +39,21 @@ def get_mission(mission_id: int, db: Session = Depends(get_db)) -> MissionRespon
     return mission_service.get_mission(db, mission_id)
 
 
-@router.patch("/{mission_id}", response_model=MissionResponse)
+@router.patch(
+    "/{mission_id}",
+    response_model=MissionResponse,
+    dependencies=[Depends(require_mission_manager)],
+)
 def update_mission(
-    mission_id: int,
-    payload: MissionUpdate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_mission_manager),
+    mission_id: int, payload: MissionUpdate, db: Session = Depends(get_db)
 ) -> MissionResponse:
     return mission_service.update_mission(db, mission_id, payload)
 
 
-@router.delete("/{mission_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_mission(
-    mission_id: int,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_mission_manager),
-) -> None:
+@router.delete(
+    "/{mission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_mission_manager)],
+)
+def delete_mission(mission_id: int, db: Session = Depends(get_db)) -> None:
     mission_service.delete_mission(db, mission_id)

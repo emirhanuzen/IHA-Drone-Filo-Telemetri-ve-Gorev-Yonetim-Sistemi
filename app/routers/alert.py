@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db, require_telemetry_sender
 from app.models.enums import AlertType
 from app.schemas.alert import SensorAlertCreate, SensorAlertResponse
-from app.schemas.user import CurrentUser
 from app.services import alert as alert_service
 
 # Uyarılar çoğunlukla worker tarafından otomatik üretilir; elle uyarı açmak
@@ -14,11 +13,14 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=SensorAlertResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SensorAlertResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_telemetry_sender)],
+)
 def create_alert(
-    payload: SensorAlertCreate,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_telemetry_sender),
+    payload: SensorAlertCreate, db: Session = Depends(get_db)
 ) -> SensorAlertResponse:
     """Elle uyarı kaydı açar (ör. sinyal kaybı bildirimi)."""
     return alert_service.create_alert(db, payload)
