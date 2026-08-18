@@ -70,21 +70,28 @@ def list_alerts(
     return list(db.scalars(stmt).all())
 
 
-def publish_alert_created(alert: SensorAlert) -> None:
-    """Oluşan uyarıyı "alert.created" event'i olarak RabbitMQ'ya yayınlar."""
-    publish_event(
-        ALERT_CREATED_EVENT,
-        {
-            "event": ALERT_CREATED_EVENT,
-            "alert_id": alert.id,
-            "drone_id": alert.drone_id,
-            "telemetry_log_id": alert.telemetry_log_id,
-            "alert_type": alert.alert_type.value,
-            "severity": alert.severity.value,
-            "message": alert.message,
-            "timestamp": alert.timestamp.isoformat(),
-        },
-    )
+def build_event_payload(alert: SensorAlert) -> dict:
+    """Uyarıyı event gövdesine dönüştürür.
+
+    Payload, oturum commit edilmeden ÖNCE hazırlanır; commit sonrası nesne
+    alanları tazelenmek zorunda kalmasın diye.
+    """
+    return {
+        "event": ALERT_CREATED_EVENT,
+        "alert_id": alert.id,
+        "drone_id": alert.drone_id,
+        "telemetry_log_id": alert.telemetry_log_id,
+        "alert_type": alert.alert_type.value,
+        "severity": alert.severity.value,
+        "message": alert.message,
+        "timestamp": alert.timestamp.isoformat(),
+    }
+
+
+def publish_alert_created(payloads: list[dict]) -> None:
+    """Hazırlanmış uyarı event'lerini "alert.created" ile yayınlar."""
+    for payload in payloads:
+        publish_event(ALERT_CREATED_EVENT, payload)
 
 
 def create_alert(db: Session, data: SensorAlertCreate) -> SensorAlert:
@@ -93,10 +100,13 @@ def create_alert(db: Session, data: SensorAlertCreate) -> SensorAlert:
 
     alert = SensorAlert(**data.model_dump(exclude_none=True))
     db.add(alert)
+    db.flush()
+    payload = build_event_payload(alert)
     db.commit()
-    db.refresh(alert)
 
-    publish_alert_created(alert)
+    # Event, kayıt kalıcı olduktan SONRA yayınlanır.
+    publish_alert_created([payload])
+    db.refresh(alert)
     return alert
 
 
@@ -193,6 +203,9 @@ def evaluate_logs(db: Session, logs: list[TelemetryLog]) -> list[SensorAlert]:
 
     Kayıtlar drone bazında gruplanır ve zaman sırasına dizilir; her drone için
     veritabanındaki son ölçüm bir kez okunur, sonrası paket içinde ilerler.
+
+    Uyarılar oturuma eklenip flush edilir; COMMIT çağıranın sorumluluğunda,
+    böylece telemetri kayıtları ile uyarılar aynı işlemde kalıcı olur.
     """
     if not logs:
         return []
@@ -214,9 +227,6 @@ def evaluate_logs(db: Session, logs: list[TelemetryLog]) -> list[SensorAlert]:
 
     if alerts:
         db.add_all(alerts)
-        db.commit()
-        for alert in alerts:
-            db.refresh(alert)
-            publish_alert_created(alert)
+        db.flush()
 
     return alerts

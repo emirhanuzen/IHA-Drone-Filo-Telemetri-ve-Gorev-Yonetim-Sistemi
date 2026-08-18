@@ -24,6 +24,7 @@ from app.config import settings
 from app.models.drone import Drone
 from app.models.telemetry import TelemetryLog
 from app.schemas.telemetry import TelemetryLogCreate
+from app.services import alert as alert_service
 
 # Task adları; import döngüsü olmasın diye task'lar adlarıyla çağrılır.
 TASK_PROCESS_BATCH = "telemetry.process_batch"
@@ -85,11 +86,17 @@ def _to_model(data: TelemetryLogCreate) -> TelemetryLog:
 
 
 def create_telemetry(db: Session, data: TelemetryLogCreate) -> TelemetryLog:
-    """Tek bir telemetri kaydı oluşturur (senkron)."""
+    """Tek bir telemetri kaydı oluşturur (senkron) ve kurallardan geçirir."""
     _validate_drones_exist(db, {data.drone_id})
     log = _to_model(data)
     db.add(log)
+    db.flush()
+
+    alerts = alert_service.evaluate_logs(db, [log])
+    payloads = [alert_service.build_event_payload(a) for a in alerts]
     db.commit()
+
+    alert_service.publish_alert_created(payloads)
     db.refresh(log)
     return log
 
@@ -165,7 +172,7 @@ def _persist_records(
     tek bir bozuk satır yüzünden tüm paket düşmez.
     """
     if not records:
-        return {"received": 0, "inserted": 0, "skipped": 0}
+        return {"received": 0, "inserted": 0, "skipped": 0, "alerts": 0}
 
     valid: list[TelemetryLogCreate] = []
     skipped = 0
@@ -185,11 +192,26 @@ def _persist_records(
             continue
         logs.append(_to_model(item))
 
+    alert_count = 0
     if logs:
         db.add_all(logs)
+        # Uyarı kuralları için kayıtların id ve zaman damgası gerekir.
+        db.flush()
+
+        alerts = alert_service.evaluate_logs(db, logs)
+        payloads = [alert_service.build_event_payload(a) for a in alerts]
         db.commit()
 
-    return {"received": len(records), "inserted": len(logs), "skipped": skipped}
+        # Event'ler ancak kayıtlar kalıcı olduktan sonra yayınlanır.
+        alert_service.publish_alert_created(payloads)
+        alert_count = len(payloads)
+
+    return {
+        "received": len(records),
+        "inserted": len(logs),
+        "skipped": skipped,
+        "alerts": alert_count,
+    }
 
 
 def save_telemetry_batch(db: Session, records: list[dict]) -> dict:
@@ -227,12 +249,11 @@ def import_telemetry_csv(db: Session, file_path: str) -> dict:
     # Drone kimlikleri dosya boyunca sabit; tek sorguyla okunup yeniden kullanılır.
     known_ids = set(db.scalars(select(Drone.id)).all())
 
-    totals = {"received": 0, "inserted": 0, "skipped": 0, "chunks": 0}
+    totals = {"received": 0, "inserted": 0, "skipped": 0, "alerts": 0, "chunks": 0}
     for chunk in pd.read_csv(path, chunksize=settings.csv_chunk_size):
         summary = _persist_records(db, _chunk_to_records(chunk), known_ids)
-        totals["received"] += summary["received"]
-        totals["inserted"] += summary["inserted"]
-        totals["skipped"] += summary["skipped"]
+        for key in ("received", "inserted", "skipped", "alerts"):
+            totals[key] += summary[key]
         totals["chunks"] += 1
 
     return totals
