@@ -8,5 +8,6 @@ from app.models.alert import SensorAlert
 from app.models.drone import Drone
 from app.models.mission import Mission
 from app.models.telemetry import TelemetryLog
+from app.models.user import User
 
-__all__ = ["Drone", "Mission", "SensorAlert", "TelemetryLog"]
+__all__ = ["Drone", "Mission", "SensorAlert", "TelemetryLog", "User"]
