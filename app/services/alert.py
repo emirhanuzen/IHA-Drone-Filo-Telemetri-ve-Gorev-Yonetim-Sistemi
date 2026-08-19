@@ -12,6 +12,7 @@ Kurallar:
 
 import math
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -149,6 +150,18 @@ def _check_low_fuel(log: TelemetryLog) -> SensorAlert | None:
     )
 
 
+def _as_utc(moment: datetime) -> datetime:
+    """Zaman damgasını karşılaştırılabilir hâle getirir.
+
+    Kayıt, saat dilimi bilgisi olmadan gelmiş olabilir (ör. istemcinin
+    gönderdiği ham zaman damgası). Böyle bir değer UTC kabul edilir; aksi hâlde
+    aynı pakette hem tz'li hem tz'siz kayıt olduğunda çıkarma işlemi patlar.
+    """
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
 def _check_position_jump(
     log: TelemetryLog, previous: TelemetryLog | None
 ) -> SensorAlert | None:
@@ -159,7 +172,8 @@ def _check_position_jump(
     distance_km = _haversine_km(
         previous.latitude, previous.longitude, log.latitude, log.longitude
     )
-    elapsed_hours = (log.timestamp - previous.timestamp).total_seconds() / 3600
+    elapsed = _as_utc(log.timestamp) - _as_utc(previous.timestamp)
+    elapsed_hours = elapsed.total_seconds() / 3600
 
     if elapsed_hours <= 0:
         # Zaman ilerlememiş: küçük bir sapma ölçüm gürültüsü sayılır.
@@ -215,7 +229,7 @@ def evaluate_logs(db: Session, logs: list[TelemetryLog]) -> list[SensorAlert]:
 
     alerts: list[SensorAlert] = []
     for drone_id, drone_logs in by_drone.items():
-        drone_logs.sort(key=lambda item: (item.timestamp, item.id))
+        drone_logs.sort(key=lambda item: (_as_utc(item.timestamp), item.id))
         previous = _previous_log(db, drone_id, before_id=drone_logs[0].id)
 
         for log in drone_logs:
