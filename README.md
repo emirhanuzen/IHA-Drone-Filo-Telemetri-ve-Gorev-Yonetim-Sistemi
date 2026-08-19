@@ -26,6 +26,7 @@ worker'ıdır.
 - [Veritabanı Göçleri (Alembic)](#veritabanı-göçleri-alembic)
 - [Ortam Değişkenleri](#ortam-değişkenleri)
 - [Proje Yapısı](#proje-yapısı)
+- [Bilinen Sınırlamalar](#bilinen-sınırlamalar)
 
 ---
 
@@ -51,6 +52,11 @@ Tek gereksinim Docker'dır. Depo kök dizininde:
 ```bash
 docker compose up --build
 ```
+
+> **Not:** Bu deponun yolunda Türkçe karakter varsa BuildKit build adımında
+> düşebilir. Böyle bir durumda klasik builder ile kurun:
+> `COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose up --build`
+> — ayrıntı için [Bilinen Sınırlamalar](#bilinen-sınırlamalar).
 
 Bu komut dört servisi ayağa kaldırır:
 
@@ -365,6 +371,19 @@ Testleri gerçek PostgreSQL üzerinde koşturmak için ayrı bir veritabanı ver
 TEST_DATABASE_URL=postgresql+psycopg2://iha:iha@postgres:5432/iha_filo_test pytest
 ```
 
+### Uçtan uca test
+
+`scripts/e2e_test.py`, **çalışan yığıta** gerçek HTTP istekleri atar: sahte
+hiçbir şey kullanmaz, Celery worker görevleri gerçekten işler ve uyarılar
+gerçekten RabbitMQ'ya basılır. Yalnızca standart kütüphane kullandığı için ek
+bağımlılık istemez:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+python scripts/e2e_test.py
+```
+
 Kapsam:
 
 | Dosya | Neyi sınar |
@@ -448,3 +467,71 @@ ya da ortam değişkeni ile ezilebilir (`.env.example` dosyasını kopyalayın).
 ├── pytest.ini
 └── requirements.txt
 ```
+
+---
+
+## Bilinen Sınırlamalar
+
+### Türkçe karakterli klasör yolu ve BuildKit
+
+Proje dizininin adında Türkçe karakter bulunuyor
+(`... İHA Filo Telemetri ve Görev Yönetim Sistemi`). Bu, iki yerde kendini
+gösterir:
+
+1. **Docker Compose proje adı.** Compose, proje adını dizin adından türetirken
+   ASCII dışı karakterleri düşürür; konteynerler
+   `ihadronefilotelemetrivegrevynetimsistemi-*` adıyla oluşur. Çalışmayı
+   engellemez. Sabit ve okunaklı bir ad için:
+
+   ```bash
+   COMPOSE_PROJECT_NAME=iha_filo docker compose up --build
+   ```
+
+2. **BuildKit build hatası.** Yeni Docker sürümlerinde (test edilen: Docker
+   29.6 / Compose v5.3) build bağlamının yolu bir HTTP başlığında taşındığı
+   için, ASCII dışı karakterli yolda build şu hatayla düşer:
+
+   ```
+   failed to dial gRPC: rpc error: ... header key
+   "x-docker-expose-session-sharedkey" contains value with
+   non-printable ASCII characters
+   ```
+
+   Bu, projenin değil ortamın sınırlamasıdır. İki çözümden biri kullanılır:
+
+   ```bash
+   # 1) Klasik builder ile build et (bu depoda doğrulanan yol)
+   COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose up --build
+
+   # 2) ya da projeyi ASCII bir yola taşı (ör. C:\projects\iha-filo)
+   ```
+
+   İmajlar bir kez kurulduktan sonra `docker compose up` sorunsuz çalışır;
+   sorun yalnızca **build** adımındadır.
+
+### Diğer sınırlamalar
+
+- **Windows satır sonları.** Depoda `.gitattributes` ile `eol=lf` zorlanır.
+  `scripts/entrypoint.sh` CRLF ile checkout edilirse konteyner
+  `exec format error` verir; dosyanın LF olduğundan emin olun.
+- **Kimlik doğrulama tek yönlü.** Refresh token, token iptali (blacklist) ve
+  parola değiştirme uçları yoktur. Rol token içinde taşındığı için, bir
+  kullanıcının rolü değiştiğinde eski token'ı süresi dolana kadar eski rolüyle
+  geçerli kalır — bu, her istekte veritabanına sorgu atmamanın bilinçli
+  bedelidir.
+- **Anomali kuralı basit.** Konum sıçraması yalnızca ardışık iki ölçüm
+  arasındaki örtük yatay hıza bakar; irtifa değişimi, rüzgâr ya da GPS
+  hassasiyeti hesaba katılmaz. `sinyal_kaybi` uyarısı otomatik üretilmez, elle
+  bildirilir.
+- **Aynı ölçüm zamanı.** Toplu gönderimde `timestamp` verilmezse tüm kayıtlar
+  sunucu zamanını alır; aynı ana düşen ve 1 km'den uzak ölçümler anomali
+  sayılabilir. Toplu gönderimlerde `timestamp` alanının gönderilmesi önerilir.
+- **CSV yükleme paylaşılan volume'e bağlıdır.** `api` ve `celery_worker` aynı
+  `upload_data` volume'ünü kullanır; servisler farklı makinelere dağıtılırsa
+  ortak bir nesne deposu (S3/MinIO) gerekir.
+- **bcrypt sürümü sabitlenmiştir.** passlib 1.7.4, bcrypt 4.1+ sürümlerinin
+  sürüm bilgisini okuyamayıp her parola işleminde log'a hata basıyor; bu yüzden
+  `requirements.txt` içinde `bcrypt==4.0.1` sabitlenmiştir.
+- **Ölçekleme.** Celery worker tek kuyruk dinler ve `worker_prefetch_multiplier=1`
+  ile çalışır; yüksek hacimde `docker compose up --scale celery_worker=N` ile
+  yatay ölçeklenmelidir.
