@@ -255,6 +255,7 @@ Bir drone silindiğinde görevleri, telemetri kayıtları ve uyarıları da sili
 
 ## Endpoint Listesi
 
+![Swagger](/docs/iha_swagger.png)
 Toplam **25 uç nokta**. `Yetki` sütunundaki roller dışında herkes `403` alır;
 token göndermeyen istekler `401` alır. **admin her uca erişir.**
 
