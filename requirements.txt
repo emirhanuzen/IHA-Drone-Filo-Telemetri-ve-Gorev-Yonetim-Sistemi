@@ -7,7 +7,9 @@ pydantic==2.8.2
 pydantic-settings==2.3.4
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.1.3
+# passlib 1.7.4, bcrypt 4.1+ surumlerinde surum bilgisini okuyamiyor ve
+# her parola islemi icin log'a hata basiyor; 4.0.1 ile uyumlu calisiyor.
+bcrypt==4.0.1
 python-multipart==0.0.9
 celery==5.4.0
 kombu==5.3.7
